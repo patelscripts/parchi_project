@@ -1,0 +1,59 @@
+const ANALYTE_ALIASES = {
+  creatinine: ['creatinine', 'serum creatinine', 's. creatinine', 'creat'],
+  bun: ['bun', 'blood urea nitrogen', 'urea nitrogen'],
+  acr: ['acr', 'albumin creatinine ratio', 'microalbumin/creatinine ratio', 'uacr'],
+  hba1c: ['hba1c', 'glycosylated haemoglobin', 'glycated hemoglobin', 'gly. hb', 'gly hb', 'hemoglobin a1c', 'a1c'],
+};
+
+const PLAUSIBLE_RANGE = {
+  creatinine: [0.1, 20],
+  bun: [1, 200],
+  acr: [0, 5000],
+  hba1c: [3, 20],
+};
+
+function resolveAnalyteKey(rawName) {
+  const normalized = rawName.trim().toLowerCase();
+  for (const [key, aliases] of Object.entries(ANALYTE_ALIASES)) {
+    if (aliases.some((alias) => normalized.includes(alias))) return key;
+  }
+  return null;
+}
+
+function convertToCanonical(analyteKey, value, unit) {
+  const u = unit.trim().toLowerCase();
+
+  if (analyteKey === 'hba1c') {
+    if (u.includes('mmol/mol')) {
+      return { value: Number((value / 10.929 + 2.15).toFixed(2)), unit: '%' };
+    }
+    return { value, unit: '%' };
+  }
+
+  if (['creatinine', 'bun'].includes(analyteKey)) {
+    if (u.includes('µmol/l') || u.includes('umol/l')) {
+      return { value: Number((value / 88.4).toFixed(2)), unit: 'mg/dL' };
+    }
+    return { value, unit: 'mg/dL' };
+  }
+
+  return { value, unit };
+}
+
+function isPlausible(analyteKey, value) {
+  const range = PLAUSIBLE_RANGE[analyteKey];
+  if (!range) return false;
+  return value >= range[0] && value <= range[1];
+}
+
+function normalizeExtractedValue({ rawLabel, value, unit }) {
+  const key = resolveAnalyteKey(rawLabel);
+  if (!key) return null;
+
+  const { value: normalizedValue, unit: normalizedUnit } = convertToCanonical(key, value, unit);
+  if (!isPlausible(key, normalizedValue)) return null;
+
+  return { analyteKey: key, rawLabel, value: normalizedValue, unit: normalizedUnit };
+}
+
+module.exports = { normalizeExtractedValue };
