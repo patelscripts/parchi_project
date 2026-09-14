@@ -4,13 +4,14 @@ import TrendChart from '../components/TrendChart';
 import TrendSummaryCard from '../components/TrendSummaryCard';
 import InsufficientDataCard from '../components/InsufficientDataCard';
 import { patientService } from '../api/patient';
-import { Upload, FileText, CheckCircle } from 'lucide-react';
+import { Upload, FileText, CheckCircle, Activity } from 'lucide-react';
 import { reportService } from '../api/reports';
 import VerifyTable from '../components/VerifyTable';
 
 const PatientDashboard = () => {
   const [growthData, setGrowthData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showOtherAnalytes, setShowOtherAnalytes] = useState(false);
   const [uploadStep, setUploadStep] = useState('idle'); // idle | date | upload | verify
   const [uploadState, setUploadState] = useState({
     date: '',
@@ -24,15 +25,23 @@ const PatientDashboard = () => {
     fetchGrowth();
   }, []);
 
-  const fetchGrowth = async () => {
-    setLoading(true);
+  const fetchGrowth = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await patientService.getGrowth();
-      setGrowthData(data);
+
+      // Backend returns { patientId, analytes: [...] }
+      const growthMap = {};
+      if (data && data.analytes) {
+        data.analytes.forEach(a => {
+          growthMap[a.analyteKey] = a;
+        });
+      }
+      setGrowthData(growthMap);
     } catch (err) {
       console.error('Error fetching growth data:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -75,9 +84,8 @@ const PatientDashboard = () => {
     setIsVerifying(true);
     try {
       await reportService.verify(records);
-      setUploadStep('idle');
-      setUploadState({ date: '', clinicCode: '', reportId: null, drafts: [] });
-      await fetchGrowth();
+      await fetchGrowth(true); // Call silently to avoid triggering the global "Loading..." screen
+      setUploadStep('success'); // Now we can move to the success screen with updated data
     } catch (err) {
       alert('Verification failed: ' + err.message);
     } finally {
@@ -111,70 +119,92 @@ const PatientDashboard = () => {
   }
 
   const renderAnalyteSection = (title, keys, combined = false) => {
-    // keys: array of analyteKeys
-    // combined: if true, use one chart for all keys
     if (!growthData) return null;
 
     const analytics = keys.map(key => growthData[key]).filter(Boolean);
     if (analytics.length === 0) return null;
 
-    // Logic for 4-report gate
-    // If combined, check if any of the group have trend_available
-    // Prompt says: "below 4 verified reports for an analyte group... NEVER show trend"
+    const reportsCount = analytics.reduce(
+      (max, item) => Math.max(max, item?.trend?.reportsUploaded || 0),
+      0
+    );
     const hasTrend = analytics.some(a => a.trend.status === 'trend_available');
-    const reportsCount = analytics[0]?.trend.reportsUploaded || 0;
+
+    // Merge data for combined charts
+    let finalChartData = [];
+    if (combined) {
+      const dateMap = {};
+      analytics.forEach(a => {
+        (a.chartData || []).forEach(point => {
+          if (!dateMap[point.date]) dateMap[point.date] = { date: point.date };
+          const key = a.analyteKey;
+          dateMap[point.date][key] = point.value;
+        });
+      });
+      finalChartData = Object.values(dateMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+    } else {
+      finalChartData = analytics[0]?.chartData || [];
+    }
 
     return (
       <div className="mb-12">
         <h2 className="font-heading text-xl font-medium text-text-main mb-6 lowercase">{title}</h2>
-
-        {!hasTrend ? (
-          <InsufficientDataCard uploaded={reportsCount} />
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white border border-border-hairline rounded-xl p-6 shadow-soft">
-              {combined ? (
-                <TrendChart
-                  data={growthData.chartData || []} // Backend should provide aggregated chart data
-                  series={[
-                    { key: 'creatinine', color: '#0F766E', label: 'Creatinine' },
-                    { key: 'bun', color: '#2563EB', label: 'BUN' },
-                    { key: 'acr', color: '#14B8A6', label: 'ACR' },
-                  ]}
-                  threshold={{ value: 1.3, label: '1.3 mg/dL' }}
-                  thresholdSource="Standard upper reference limit"
-                />
-              ) : (
-                <TrendChart
-                  data={growthData.hba1c?.chartData || []}
-                  series={[{ key: 'hba1c', color: '#0F766E', label: 'HbA1c' }]}
-                  threshold={{ value: 6.5, label: '6.5%' }}
-                  thresholdSource="Standard diagnostic threshold"
-                />
-              )}
-            </div>
-            <div className="flex flex-col gap-4">
-              {keys.map(key => {
-                const data = growthData[key];
-                if (!data) return null;
-                return (
-                  <TrendSummaryCard
-                    key={key}
-                    analyte={key.toUpperCase()}
-                    trend={data.trend}
-                    threshold={data.threshold}
-                    projection={data.projection}
-                    tier={data.tier?.tier}
-                    brief={data.brief || 'No summary available.'}
-                  />
-                );
-              })}
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white border border-border-hairline rounded-xl p-6 shadow-soft">
+            {hasTrend ? (
+              <TrendChart
+                data={finalChartData}
+                series={combined
+                  ? [
+                      { key: 'creatinine', color: '#0F766E', label: 'Creatinine' },
+                      { key: 'bun', color: '#2563EB', label: 'BUN' },
+                      { key: 'acr', color: '#14B8A6', label: 'ACR' },
+                    ]
+                  : [
+                      { key: analytics[0].analyteKey, color: '#0F766E', label: analytics[0].analyteKey.toUpperCase() }
+                    ]
+                }
+                threshold={analytics[0]?.threshold}
+                thresholdSource={analytics[0]?.threshold?.source}
+              />
+            ) : (
+              <div className="h-64 flex flex-col items-center justify-center text-center p-8">
+                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-gray-400 mb-4">
+                  <Activity size={24} />
+                </div>
+                <h4 className="font-medium text-text-main mb-1">Trend Analysis Coming Soon</h4>
+                <p className="text-sm text-text-muted max-w-xs">
+                  We need at least 4 verified reports to calculate a reliable trend line.
+                  Currently have {reportsCount} report(s).
+                </p>
+              </div>
+            )}
           </div>
-        )}
+          <div className="flex flex-col gap-4">
+            {keys.map(key => {
+              const data = growthData[key];
+              if (!data) return null;
+              return (
+                <TrendSummaryCard
+                  key={key}
+                  analyte={key.toUpperCase()}
+                  trend={data.trend}
+                  threshold={data.threshold}
+                  projection={data.projection}
+                  tier={data.tier?.tier}
+                  brief={data.brief || 'No summary available.'}
+                />
+              );
+            })}
+          </div>
+        </div>
       </div>
     );
   };
+
+  const otherAnalytes = growthData
+    ? Object.entries(growthData).filter(([key]) => !['creatinine', 'bun', 'acr', 'hba1c', 'egfr'].includes(key))
+    : [];
 
   return (
     <div className="min-h-screen bg-bg-main">
@@ -197,11 +227,73 @@ const PatientDashboard = () => {
 
         {renderAnalyteSection('kidney', ['creatinine', 'bun', 'acr'], true)}
         {renderAnalyteSection('diabetes', ['hba1c'], false)}
+
+        {/* Other Analytes Section */}
+        {growthData && (
+          <div className="mt-16 border-t border-border-hairline pt-12">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="font-heading text-xl font-medium text-text-main lowercase">Other Markers</h2>
+              {!showOtherAnalytes && (
+                <button
+                  onClick={() => setShowOtherAnalytes(true)}
+                  className="text-sm font-medium text-primary hover:underline transition-colors"
+                >
+                  Watch More ↓
+                </button>
+              )}
+            </div>
+
+            {showOtherAnalytes && (
+              <div className="bg-white border border-border-hairline rounded-xl overflow-hidden shadow-soft animate-in fade-in slide-in-from-top-2 duration-300">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-gray-50 border-b border-border-hairline">
+                    <tr className="text-xs font-medium text-text-muted">
+                      <th className="py-3 px-6">Marker</th>
+                      <th className="py-3 px-6">Latest Value</th>
+                      <th className="py-3 px-6">Unit</th>
+                      <th className="py-3 px-6">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {otherAnalytes.length > 0 ? (
+                      otherAnalytes.map(([key, data]) => (
+                        <tr key={key} className="border-b border-border-hairline last:border-0 hover:bg-gray-50 transition-colors">
+                          <td className="py-3 px-6 text-sm font-medium text-text-main">{data.rawLabel || key}</td>
+                          <td className="py-3 px-6 text-sm font-mono text-text-main">{data.latestValue}</td>
+                          <td className="py-3 px-6 text-sm text-text-muted">{data.unit || '-'}</td>
+                          <td className="py-3 px-6">
+                            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold uppercase rounded">
+                              {data.trend?.status === 'trend_available' ? 'Trend Available' : 'Single Value'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="py-8 text-center text-sm text-text-muted italic">
+                          No other markers found in your reports.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                <div className="p-4 bg-gray-50 border-t border-border-hairline text-right">
+                  <button
+                    onClick={() => setShowOtherAnalytes(false)}
+                    className="text-sm font-medium text-text-muted hover:text-text-main transition-colors"
+                  >
+                    Show Less ↑
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* Upload Modal */}
       {uploadStep !== 'idle' && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-soft overflow-hidden flex flex-col max-h-[90vh]">
             <div className="px-6 py-4 border-b border-border-hairline flex justify-between items-center">
               <h3 className="font-heading font-semibold text-text-main">Upload Lab Report</h3>
@@ -279,6 +371,79 @@ const PatientDashboard = () => {
                   }}
                   onVerify={() => handleVerifySubmit(uploadState.drafts)}
                 />
+              )}
+
+              {uploadStep === 'success' && (
+                <div className="flex flex-col items-center text-center py-6">
+                  <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+                    <CheckCircle size={32} />
+                  </div>
+                  <h4 className="font-heading text-2xl font-bold text-text-main mb-2">Verification Complete!</h4>
+                  <p className="text-text-muted mb-8">Here is the updated trend for your markers.</p>
+
+                  <div className="w-full space-y-8">
+                    {uploadState.drafts.map((draft, idx) => {
+                      // Map draft analyteName to growthData keys
+                      const key = draft.analyteName.toLowerCase();
+                      const data = growthData?.[key];
+                      if (!data) return null;
+
+                      return (
+                        <div key={idx} className="text-left p-6 bg-gray-50 rounded-2xl border border-border-hairline">
+                          <div className="flex justify-between items-center mb-4">
+                            <h5 className="font-heading font-semibold text-text-main capitalize">{key} Trend</h5>
+                            <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
+                              data.tier?.tier === 'critical' ? 'bg-red-100 text-red-600' :
+                              data.tier?.tier === 'warning' ? 'bg-yellow-100 text-yellow-600' : 'bg-green-100 text-green-600'
+                            }`}>
+                              {data.tier?.tier || 'stable'}
+                            </div>
+                          </div>
+
+                          <div className="h-48 mb-6">
+                            <TrendChart
+                              data={data.chartData || []}
+                              series={[{
+                                key: key,
+                                color: key === 'hba1c' ? '#0F766E' : '#2563EB',
+                                label: key.toUpperCase()
+                              }]}
+                              threshold={data.threshold}
+                              thresholdSource={data.threshold?.source}
+                            />
+                          </div>
+
+                          <div className="bg-white p-4 rounded-xl border border-border-hairline shadow-sm">
+                            <p className="text-sm text-text-main leading-relaxed italic">
+                              "{data.brief || 'No summary available.'}"
+                            </p>
+                            {data.projection && (
+                              <div className="mt-3 pt-3 border-t border-border-hairline text-xs font-medium text-primary">
+                                🚀 Projection: {
+                                  data.projection.alreadyCrossed
+                                    ? 'Value is currently above the reference threshold.'
+                                    : data.projection.yearsToThreshold
+                                      ? `Projected to reach threshold in ~${data.projection.yearsToThreshold} years.`
+                                      : 'Trend is stable for the upcoming year.'
+                                }
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setUploadStep('idle');
+                      setUploadState({ date: '', clinicCode: '', reportId: null, drafts: [] });
+                    }}
+                    className="mt-10 px-8 py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
+                  >
+                    Back to Dashboard
+                  </button>
+                </div>
               )}
             </div>
           </div>

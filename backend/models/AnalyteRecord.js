@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const ALLOWED_ANALYTES = ['creatinine', 'bun', 'acr', 'hba1c'];
+const ALLOWED_ANALYTES = ['creatinine', 'bun', 'acr', 'hba1c', 'egfr'];
 
 const analyteRecordSchema = new mongoose.Schema(
   {

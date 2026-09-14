@@ -19,6 +19,18 @@ const Navbar = () => {
           parchi
         </Link>
 
+        <div className="hidden md:flex items-center gap-8">
+          <Link to="/patient-info" className="text-sm font-medium text-text-muted hover:text-primary transition-colors">
+            Patient
+          </Link>
+          <Link to="/clinic-info" className="text-sm font-medium text-text-muted hover:text-primary transition-colors">
+            Clinic
+          </Link>
+          <Link to="/how-it-works" className="text-sm font-medium text-text-muted hover:text-primary transition-colors">
+            How it works
+          </Link>
+        </div>
+
         <div className="flex items-center gap-6">
           {user ? (
             <div className="flex items-center gap-4">

@@ -3,6 +3,7 @@ const ANALYTE_ALIASES = {
   bun: ['bun', 'blood urea nitrogen', 'urea nitrogen'],
   acr: ['acr', 'albumin creatinine ratio', 'microalbumin/creatinine ratio', 'uacr'],
   hba1c: ['hba1c', 'glycosylated haemoglobin', 'glycated hemoglobin', 'gly. hb', 'gly hb', 'hemoglobin a1c', 'a1c'],
+  egfr: ['egfr', 'estimated glomerular filtration rate', 'eGFR', 'gfr'],
 };
 
 const PLAUSIBLE_RANGE = {
@@ -10,6 +11,7 @@ const PLAUSIBLE_RANGE = {
   bun: [1, 200],
   acr: [0, 5000],
   hba1c: [3, 20],
+  egfr: [1, 200],
 };
 
 function resolveAnalyteKey(rawName) {
@@ -48,7 +50,13 @@ function isPlausible(analyteKey, value) {
 
 function normalizeExtractedValue({ rawLabel, value, unit }) {
   const key = resolveAnalyteKey(rawLabel);
-  if (!key) return null;
+
+  if (!key) {
+    // For non-core analytes, use a normalized version of the raw label as the key
+    // This ensures that 'Glucose' and 'glucose' are treated as the same marker
+    const normalizedLabel = rawLabel.trim().toLowerCase().replace(/\s+/g, '_');
+    return { analyteKey: normalizedLabel, rawLabel, value, unit };
+  }
 
   const { value: normalizedValue, unit: normalizedUnit } = convertToCanonical(key, value, unit);
   if (!isPlausible(key, normalizedValue)) return null;

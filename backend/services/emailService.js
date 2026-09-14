@@ -1,9 +1,9 @@
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
 });
 
 async function sendResetEmail(email, resetUrl) {

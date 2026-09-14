@@ -35,7 +35,14 @@ async function computeTrendForAnalyte(patientId, analyteKey) {
 
   const tier = getEscalationTier({ trend, projection, rSquared: trend.rSquared ?? null });
 
-  return { analyteKey, trend, threshold, projection, tier };
+  return {
+    analyteKey,
+    trend,
+    threshold,
+    projection,
+    tier,
+    chartData: points
+  };
 }
 
 exports.getTrendForAnalyte = async (req, res) => {

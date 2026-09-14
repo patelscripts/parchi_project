@@ -23,15 +23,26 @@ exports.extractFromReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied to this report' });
     }
 
-    const geminiResult = await geminiService.extractValues(req.file.buffer, req.file.mimetype);
-
-    if (geminiResult.reportDate) {
-      report.reportDate = geminiResult.reportDate;
-      report.labName = geminiResult.labName;
-      await report.save();
+    let geminiResult;
+    try {
+      geminiResult = await geminiService.extractValues(req.file.buffer, req.file.mimetype);
+    } catch (aiErr) {
+      console.error('Gemini AI Error:', aiErr);
+      return res.status(502).json({ message: 'AI extraction service failed', error: aiErr.message });
     }
 
-    // Normalize Analytes (Kidney/Diabetes only)
+    if (geminiResult.reportDate) {
+      const date = new Date(geminiResult.reportDate);
+      if (!isNaN(date.getTime())) {
+        report.reportDate = date;
+        report.labName = geminiResult.labName;
+        await report.save();
+      } else {
+        console.warn(`Invalid date extracted by AI: ${geminiResult.reportDate}`);
+      }
+    }
+
+    // Normalize Analytes (Kidney/Diabetes + Others)
     const normalized = (geminiResult.analytes || [])
       .map((a) => normalizeExtractedValue(a))
       .filter(Boolean);
@@ -40,22 +51,28 @@ exports.extractFromReport = async (req, res) => {
       return res.status(200).json({ message: 'No relevant analytes found in this report', drafts: [] });
     }
 
-    const drafts = await AnalyteRecord.insertMany(
-      normalized.map((n) => ({
-        patient: report.patient,
-        report: report._id,
-        analyteName: n.analyteKey,
-        rawLabel: n.rawLabel,
-        unit: n.unit,
-        extractedValue: n.value,
-        value: n.value,
-        date: report.reportDate,
-        status: 'pending_verification'
-      }))
-    );
+    try {
+      const drafts = await AnalyteRecord.insertMany(
+        normalized.map((n) => ({
+          patient: report.patient,
+          report: report._id,
+          analyteName: n.analyteKey,
+          rawLabel: n.rawLabel,
+          unit: n.unit,
+          extractedValue: n.value,
+          value: n.value,
+          date: report.reportDate,
+          status: 'pending_verification'
+        }))
+      );
 
-    res.status(201).json({ message: 'Extracted — please verify these values', drafts });
+      res.status(201).json({ message: 'Extracted — please verify these values', drafts });
+    } catch (dbErr) {
+      console.error('DB Insert Error:', dbErr);
+      res.status(500).json({ message: 'Failed to save extracted values to database', error: dbErr.message });
+    }
   } catch (err) {
-    res.status(500).json({ message: 'Extraction failed', error: err.message });
+    console.error('Unexpected Extraction Error:', err);
+    res.status(500).json({ message: 'An unexpected error occurred during extraction', error: err.message });
   }
 };

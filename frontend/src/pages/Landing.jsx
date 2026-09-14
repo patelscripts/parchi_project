@@ -2,30 +2,29 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, User, Building2, Activity, ShieldCheck } from 'lucide-react';
 import Footer from '../components/Footer';
+import Navbar from '../components/Navbar';
+import TrendChart from '../components/TrendChart';
 
 const Landing = () => {
+  const mockTrendData = [
+    { date: 'Jan', value: 0.8 },
+    { date: 'Mar', value: 0.9 },
+    { date: 'May', value: 1.1 },
+    { date: 'Jul', value: 1.2 },
+    { date: 'Sep', value: 1.3 },
+    { date: 'Nov', value: 1.5 },
+  ];
+
+  const mockSeries = [{ key: 'value', color: '#5ea8a8', label: 'Creatinine' }];
+  const mockThreshold = { value: 1.3, label: '1.3 mg/dL' };
+
   return (
     <div className="min-h-screen flex flex-col">
-      <div className="max-w-7xl mx-auto px-4 w-full flex justify-between items-center py-4">
-        <div className="font-heading text-2xl font-semibold text-primary lowercase">
-          parchi
-        </div>
-        <div className="flex gap-4">
-          <Link to="/login" className="text-sm font-medium text-text-muted hover:text-primary transition-colors">
-            Log In
-          </Link>
-          <Link
-            to="/signup"
-            className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"
-          >
-            Sign Up
-          </Link>
-        </div>
-      </div>
+      <Navbar />
 
       <main className="flex-1">
         {/* Hero Section */}
-        <div className="flex items-center justify-center px-4 py-20 text-center">
+        <div className="flex items-center justify-center px-4 py-12 text-center">
           <div className="max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div className="text-left">
               <h1 className="text-4xl md:text-6xl font-heading font-bold text-text-heading leading-tight mb-6">
@@ -54,11 +53,31 @@ const Landing = () => {
             </div>
             <div className="relative">
               <div className="absolute -inset-4 bg-primary-light/30 rounded-full blur-3xl"></div>
-              <img
-                src="/ChatGPT Image Sep 14, 2026, 01_51_31 AM.png"
-                alt="Parchi Health Trends Dashboard Preview"
-                className="relative rounded-2xl shadow-soft border border-border-hairline w-full h-auto object-cover"
-              />
+              <div className="relative bg-white p-6 rounded-2xl shadow-soft border border-border-hairline w-full">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 className="font-heading font-semibold text-text-heading">Health Trend Analysis</h3>
+                    <p className="text-xs text-text-muted">Tracking: Serum Creatinine</p>
+                  </div>
+                  <div className="px-2 py-1 bg-red-100 text-red-600 text-[10px] font-bold rounded uppercase">
+                    Trend: Rising
+                  </div>
+                </div>
+                <TrendChart
+                  data={mockTrendData}
+                  series={mockSeries}
+                  threshold={mockThreshold}
+                  thresholdSource="KDIGO Reference"
+                />
+                <div className="mt-8 pt-6 border-t border-border-hairline flex justify-between items-center">
+                  <div className="text-xs text-text-muted">
+                    Last report: <span className="font-medium text-text-main">Nov 2026</span>
+                  </div>
+                  <div className="text-xs font-medium text-primary">
+                    Projected crossing in 3 months
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
